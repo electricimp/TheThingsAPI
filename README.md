@@ -2,9 +2,9 @@
 
 This library wraps the [TheThings.IO](http://www.thethings.io) Internet of Things Cloud.
 
-**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.0.0"`` to the top of your device code.**
+**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.0.1"`` to the top of your device code.**
 
-You can view the library’s source code on [GitHub](https://github.com/electricimp/thethingsapi/tree/v1.0.0).
+You can view the library’s source code on [GitHub](https://github.com/electricimp/thethingsapi/tree/v1.0.1).
 
 ## Class Usage
 
@@ -23,7 +23,7 @@ All methods that make web requests to TheThings.IO (*activate*, *write*, and *re
 Create a new thing passing it's existing token as an argument or leave it empty to activate it later using the *activate* function.
 
 ```squirrel
-#require "TheThingsAPI.class.nut:1.0.0"
+#require "TheThingsAPI.class.nut:1.0.1"
 
 // Instantiate a thing with an existing token
 thing <- TheThingsAPI("<-- EXISITING_TOKEN -->");
