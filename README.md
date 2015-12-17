@@ -1,4 +1,4 @@
-# TheThingsAPI 1.0.0
+# TheThingsAPI
 
 This library wraps the [TheThings.IO](http://www.thethings.io) Internet of Things Cloud.
 
