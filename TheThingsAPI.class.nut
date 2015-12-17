@@ -3,7 +3,7 @@
 // http://opensource.org/licenses/MIT
 
 class TheThingsAPI {
-    static version = [1,0,0];
+    static version = [1,0,1];
 
     static URLROOT = "https://api.thethings.io/v2/things/";
 
@@ -77,6 +77,8 @@ class TheThingsAPI {
     // Sends _data
     function write(cb = null) {
         local data = http.jsonencode(_data);
+	// Reset buffered data
+         _data = { values = [] };
 
         // Send the request and proces the response
         local request = http.post(_urlWrite, HEADERS_WRITE, data);
@@ -161,9 +163,6 @@ class TheThingsAPI {
     // Wraps a user callback (err, resp, data) and clears _data on success
     function _writeCallbackFactory(cb) {
         return _callbackFactory(function(err, resp, data) {
-            // Reset data on success
-            if (err == null) _data = { values = [] };
-
             // Invoke the user callback
             if (cb) cb(err, resp, data);
         }.bindenv(this));
