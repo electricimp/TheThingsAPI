@@ -2,15 +2,13 @@
 
 This library wraps the [TheThings.IO](http://www.thethings.io) Internet of Things Cloud.
 
-**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.0.1"`` to the top of your device code.**
-
-You can view the library’s source code on [GitHub](https://github.com/electricimp/thethingsapi/tree/v1.0.1).
+**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.2.0"`` to the top of your device code.**
 
 ## Class Usage
 
 ### Callbacks
 
-All methods that make web requests to TheThings.IO (*activate*, *write*, and *read*) take an optional callback as a parameter. The callbacks require three parameters: err, resp, and data.
+All methods that make web requests to TheThings.IO (*activate*, *write*, *read*, and *subscribe*) take an optional callback as a parameter. The callbacks require three parameters: err, resp, and data.
 
 | parameter | notes |
 | --------- | ----- |
@@ -23,7 +21,7 @@ All methods that make web requests to TheThings.IO (*activate*, *write*, and *re
 Create a new thing passing it's existing token as an argument or leave it empty to activate it later using the *activate* function.
 
 ```squirrel
-#require "TheThingsAPI.class.nut:1.0.1"
+#require "TheThingsAPI.class.nut:1.2.0"
 
 // Instantiate a thing with an existing token
 thing <- TheThingsAPI("<-- EXISITING_TOKEN -->");
@@ -64,7 +62,7 @@ The *addVar* method returns a reference to `this`, allowing you to chain multipl
 thing.addVar("foo", "bar");
 
 // Add a sample with metadata:
-thing.addVar("foo", "bar1", {
+thing.addVar("foo1", "bar1", {
     "timestamp": time() - 3600,  // 1 hour ago
     "geo": {
         "lat": 41.4121132,
@@ -73,7 +71,7 @@ thing.addVar("foo", "bar1", {
 });
 
 // Add two samples at once:
-thing.addVar("foo", "bar").addVar("foo1": "bar1");
+thing.addVar("foo2", "bar2").addVar("foo3", "bar3");
 
 // Send all 4 samples to TheThings.IO
 thing.write(function(err, resp, data) {
@@ -126,6 +124,34 @@ thing.read("foo", { "limit": 100, "startDate": yesterday }, function(err, resp, 
 
     foreach(sample in data) {
         server.log(sample.datetime + ": " + sample.value);
+    }
+});
+```
+
+### subscribe(*[callback]*)
+
+The *subscribe* method subscribes to the thing channel to get realtime updates.  Updates are passed to the callback when available.
+
+```squirrel
+thing.subscribe(function(error, response, data) {
+    if (error) {
+        server.error(error);
+        return;
+    }
+
+    // we received an updated value from the thing channel
+    if (typeof content == "array") {
+        foreach (item in content) {
+            // Do something with the update
+            server.log(item.key + ": " + item.value);
+        }
+    }
+
+    // we got a ping or connection status update
+    if (typeof content == "table") {
+        // Log status and message content
+        if ("status" in content) server.log("Request status: " + content.status);
+        if ("message" in content) server.log("Message: " + content.message);
     }
 });
 ```
