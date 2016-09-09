@@ -2,7 +2,7 @@
 
 This library wraps the [TheThings.IO](http://www.thethings.io) Internet of Things Cloud.
 
-**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.2.0"`` to the top of your device code.**
+**To add this library to your project, add `#require "TheThingsAPI.class.nut:1.2.0"` to the top of your device code.**
 
 ## Class Usage
 
