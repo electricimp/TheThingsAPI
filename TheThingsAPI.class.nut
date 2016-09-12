@@ -6,6 +6,8 @@ class TheThingsAPI {
     static HEADERS_POST = { "Accept": "application/json", "Content-Type": "application/json" };
     static HEADERS_GET = { "Accept": "application/json" };
 
+    static SUBSCRIBE_REQUEST_TIMEOUT = 60000;  // Value used in things.IO subscribe example code
+
     _token = null;      // Thing Token
     _data = null;       // Cached data waiting to be sent
 
@@ -97,7 +99,7 @@ class TheThingsAPI {
         _subscribeRequest = http.get(format("%s%s", URLROOT, _token), HEADERS_GET);
 
         // open subscribe long polling request
-        _subscribeRequest.sendasync(_subscribeResponseFactory(cb), _subscribeOnDataFactory(cb), 60000);
+        _subscribeRequest.sendasync(_subscribeResponseFactory(cb), _subscribeOnDataFactory(cb), SUBSCRIBE_REQUEST_TIMEOUT);
     }
 
     // Read a variable from theThings.iO. If only the argument
@@ -167,7 +169,7 @@ class TheThingsAPI {
     // Reopens the long polling request to keep the subscription listener open
     function _subscribeResponseFactory(cb) {
         return function(resp) {
-            if (resp.statuscode < 200 || resp.statuscode >= 300) {
+            if (resp.statuscode == 28 || resp.statuscode == 200) {
                 // Expected status code
                 // Reopen connection immediately
                 imp.wakeup(0, function() { subscribe(cb); }.bindenv(this));
@@ -223,10 +225,6 @@ class TheThingsAPI {
         return function(resp) {
             // If we didn't get a 2xx status code, there was an error..
             if (resp.statuscode < 200 || resp.statuscode >= 300) {
-                if (resp.statuscode == 429) {
-                    if (cb) imp.wakeup(0, function() { cb("Error: Too many requests", resp, null); });
-                    return;
-                }
                 try {
                     local data = null;
                     if (resp.body.len() == 0) {
