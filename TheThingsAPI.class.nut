@@ -1,27 +1,25 @@
-// Copyright (c) 2015 TheThings.iO
-// This file is licensed under the MIT License
-// http://opensource.org/licenses/MIT
-
 class TheThingsAPI {
-    static version = [1,0,1];
+    static version = [1,2,0];
 
     static URLROOT = "https://api.thethings.io/v2/things/";
 
-    static HEADERS_WRITE = { "Accept": "application/json", "Content-Type": "application/json" };
-    static HEADERS_READ = { "Accept": "application/json" };
-    static HEADERS_ACT = { "Accept": "application/json", "Content-Type": "application/json" };
+    static HEADERS_POST = { "Accept": "application/json", "Content-Type": "application/json" };
+    static HEADERS_GET = { "Accept": "application/json" };
+
+    static SUBSCRIBE_REQUEST_TIMEOUT = 60000;  // Value used in things.IO subscribe example code
 
     _token = null;      // Thing Token
-    _urlWrite = null;   // URL we make write requests to
-    _urlRead = null;    // URL we make read requests to
-    _urlAct = null;     // URL we make activation requests to
-
     _data = null;       // Cached data waiting to be sent
+
+    _subscribeRequest = null;  // Subscribe request object
+    _reconnectTimeout = null;  // Time between reconnects for subscriptions
 
     // Create a new thing passing it's existing token as an argument
     // or leave it empty to activate it later using the "activate" function.
     constructor(token = null) {
-        _initData(token);
+        _token = token;
+        if (token != null) _data = { values = [] };
+        _reconnectTimeout = 60;
     }
 
     // Activate a new thing. This is only necessary if you don't have
@@ -29,14 +27,14 @@ class TheThingsAPI {
     function activate(activationCode, cb = null) {
         // Create the request
         local data = http.jsonencode({ "activationCode": activationCode });
-        local request = http.post(_urlAct, HEADERS_ACT, data);
+        local request = http.post(URLROOT, HEADERS_POST, data);
 
         // Wrap the callback to set the token and initalize data
         request.sendasync(_activateCallbackFactory(cb));
     }
 
     // To write a variable into the theThings.iO cloud, call this function with
-    // the value to write. This function can be called any times to add more
+    // the value to write. This function can be called multiple times to add more
     // variables to be sent. Finally, call the "write" function to actually write
     // the values.
     //
@@ -77,15 +75,34 @@ class TheThingsAPI {
     // Sends _data
     function write(cb = null) {
         local data = http.jsonencode(_data);
-	// Reset buffered data
+        // Reset buffered data
          _data = { values = [] };
 
-        // Send the request and proces the response
-        local request = http.post(_urlWrite, HEADERS_WRITE, data);
+        // Send the request and process the response
+        local request = http.post(format("%s%s", URLROOT, _token), HEADERS_POST, data);
         request.sendasync(_writeCallbackFactory(cb));
     }
 
-    // Read a variable from the theThings.iO. If only the argument
+    // Opens a long polling request on a thing.  When data is received from
+    // theThings.iO the callback funciton will be triggered.
+    //
+    // cb:    a callback function, exectuted when new data is availible from
+    //          theThings.IO.  The callback function has three required paramaters:
+    //              error: if there was an error processing the response
+    //              response: response from theThings.IO
+    //              data: the decoded data from
+    function subscribe(cb = null) {
+        // make sure only one subscribe request is active per thing
+        if (_subscribeRequest != null) _subscribeRequest.cancel();
+
+        // create new subscribe request
+        _subscribeRequest = http.get(format("%s%s", URLROOT, _token), HEADERS_GET);
+
+        // open subscribe long polling request
+        _subscribeRequest.sendasync(_subscribeResponseFactory(cb), _subscribeOnDataFactory(cb), SUBSCRIBE_REQUEST_TIMEOUT);
+    }
+
+    // Read a variable from theThings.iO. If only the argument
     // "key" is specified, the last value will be returned. This function will
     // return "limit" number of values of the variable inside an array.
     //
@@ -99,7 +116,7 @@ class TheThingsAPI {
     function read(key, filters = null, cb = null) {
         filters = filters ? filters : {};   // make sure options is a table
 
-        local getUrl = _urlRead + key + "/";
+        local getUrl = format("%s%s/resources/%s/", URLROOT, _token, key);
 
         // Create the parameter table
         local params = {};
@@ -128,7 +145,7 @@ class TheThingsAPI {
         // encode the parameters and add it to the getUrl
         if (params.len() > 0) getUrl += "?" + http.urlencode(params);
 
-        local request = http.get(getUrl, HEADERS_READ);
+        local request = http.get(getUrl, HEADERS_GET);
         request.sendasync(_callbackFactory(cb));
     }
 
@@ -147,6 +164,41 @@ class TheThingsAPI {
         local d = date(ts);
 
         return format("%04i%02i%02i%02i%02i%02i", d.year, d.month+1, d.day, d.hour, d.min, d.sec);
+    }
+
+    // Reopens the long polling request to keep the subscription listener open
+    function _subscribeResponseFactory(cb) {
+        return function(resp) {
+            if (resp.statuscode == 28 || resp.statuscode == 200) {
+                // Expected status code
+                // Reopen connection immediately
+                imp.wakeup(0, function() { subscribe(cb); }.bindenv(this));
+            } else if (resp.statuscode == 429) {
+                // Too many requests
+                // Try again with the _reconnectTimeout
+                imp.wakeup(_reconnectTimeout, function() { subscribe(cb); }.bindenv(this));
+                _reconnectTimeout *= 2;
+            } else {
+                // Unknown status code
+                // Reopen connection in 10s
+                imp.wakeup(10, function() { subscribe(cb); }.bindenv(this));
+            }
+        }.bindenv(this);
+    }
+
+    // Handles the subsciption long poll response from theThings.IO
+    function _subscribeOnDataFactory(cb) {
+        return function(resp) {
+            local data = {};
+            local err = null;
+            try {
+                if (resp.len() > 0) data = http.jsondecode(resp);
+            } catch (error) {
+                err = error;
+                data = null;
+            }
+            imp.wakeup(0, function() { cb(err, resp, data); }.bindenv(this));
+        }.bindenv(this)
     }
 
     // Wraps a user callback (err, resp, data) and sets _token on success
@@ -174,8 +226,12 @@ class TheThingsAPI {
             // If we didn't get a 2xx status code, there was an error..
             if (resp.statuscode < 200 || resp.statuscode >= 300) {
                 try {
-                    // If we failed to activate
-                    local data = http.jsondecode(resp.body);
+                    local data = null;
+                    if (resp.body.len() == 0) {
+                        data = {"message" : ""};
+                    } else {
+                        data = http.jsondecode(resp.body);
+                    }
                     if (cb) imp.wakeup(0, function() { cb(data.message, resp, null); });
                     return;
                 } catch (err) {
@@ -196,13 +252,4 @@ class TheThingsAPI {
         }.bindenv(this);
     }
 
-    // Sets the token, builds URLs, and initializes the _data object
-    function _initData(token) {
-        _token = token;
-        _urlWrite = URLROOT + _token;
-        _urlRead = URLROOT + _token + "/resources/";
-        _urlAct = URLROOT;
-
-        if (token != null) _data = { values = [] };
-    }
 }
